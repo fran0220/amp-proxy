@@ -1,0 +1,139 @@
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"fmt"
+	"io"
+	"net/http"
+
+	"github.com/google/uuid"
+	log "github.com/sirupsen/logrus"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
+)
+
+const (
+	codexBaseURL       = "https://chatgpt.com/backend-api/codex"
+	codexClientVersion = "0.101.0"
+	codexUserAgent     = "codex_cli_rs/0.101.0 (Mac OS 26.0.1; arm64) Apple_Terminal/464"
+)
+
+type CodexHandler struct {
+	cfg     *Config
+	retryer *Retryer
+	client  *http.Client
+	logger  *RequestLogger
+}
+
+func NewCodexHandler(cfg *Config, retryer *Retryer, logger *RequestLogger) *CodexHandler {
+	return &CodexHandler{
+		cfg:     cfg,
+		retryer: retryer,
+		client:  &http.Client{},
+		logger:  logger,
+	}
+}
+
+func (h *CodexHandler) Handle(w http.ResponseWriter, r *http.Request, body []byte, auth *ProviderAuth) {
+	model := gjson.GetBytes(body, "model").String()
+
+	// Modify body for Codex endpoint — strip unsupported parameters
+	body, _ = sjson.SetBytes(body, "stream", true)
+	body, _ = sjson.SetBytes(body, "store", false)
+	body, _ = sjson.DeleteBytes(body, "previous_response_id")
+	body, _ = sjson.DeleteBytes(body, "prompt_cache_retention")
+	body, _ = sjson.DeleteBytes(body, "safety_identifier")
+	body, _ = sjson.DeleteBytes(body, "max_output_tokens")
+	body, _ = sjson.DeleteBytes(body, "stream_options")
+	if !gjson.GetBytes(body, "instructions").Exists() {
+		body, _ = sjson.SetBytes(body, "instructions", "")
+	}
+
+	upstreamURL := codexBaseURL + "/responses"
+
+	sessionID := uuid.NewString()
+
+	resp, err := h.retryer.Do(r.Context(), h.client, func() (*http.Request, error) {
+		req, reqErr := http.NewRequest(r.Method, upstreamURL, bytes.NewReader(body))
+		if reqErr != nil {
+			return nil, reqErr
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+auth.Token)
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("Connection", "Keep-Alive")
+		req.Header.Set("Originator", "codex_cli_rs")
+		req.Header.Set("Version", codexClientVersion)
+		req.Header.Set("User-Agent", codexUserAgent)
+		req.Header.Set("Session_id", sessionID)
+
+		// Account ID is stored in auth.Email for codex-file source
+		if auth.Email != "" {
+			req.Header.Set("Chatgpt-Account-Id", auth.Email)
+		}
+
+		return req, nil
+	})
+	if err != nil {
+		log.Errorf("codex request failed: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"error":{"message":"%s","type":"proxy_error"}}`, err.Error())))
+		return
+	}
+	defer resp.Body.Close()
+
+	for key, values := range resp.Header {
+		for _, v := range values {
+			w.Header().Add(key, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		usage := h.streamResponse(w, resp.Body)
+		h.logger.RecordResult(model, resp.StatusCode, usage, 0, "", "", "")
+	} else {
+		respBody, _ := io.ReadAll(resp.Body)
+		_, _ = w.Write(respBody)
+		usage := ParseOpenAIUsage(respBody)
+		errMsg := ""
+		if resp.StatusCode >= 400 {
+			errMsg = gjson.GetBytes(respBody, "error.message").String()
+		}
+		h.logger.RecordResult(model, resp.StatusCode, usage, 0, errMsg, "", string(respBody))
+	}
+}
+
+func (h *CodexHandler) streamResponse(w http.ResponseWriter, body io.Reader) TokenUsage {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		data, _ := io.ReadAll(body)
+		_, _ = w.Write(data)
+		return ParseOpenAIUsage(data)
+	}
+
+	var lastDataLine []byte
+	scanner := bufio.NewScanner(body)
+	scanner.Buffer(nil, 10*1024*1024)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if bytes.HasPrefix(line, []byte("data: ")) {
+			lastDataLine = make([]byte, len(line))
+			copy(lastDataLine, line)
+		}
+		_, _ = w.Write(line)
+		_, _ = w.Write([]byte("\n"))
+		flusher.Flush()
+	}
+	if err := scanner.Err(); err != nil {
+		log.Warnf("codex SSE stream scan error: %v", err)
+	}
+
+	if lastDataLine != nil {
+		return ParseOpenAIUsage(lastDataLine[len("data: "):])
+	}
+	return TokenUsage{}
+}

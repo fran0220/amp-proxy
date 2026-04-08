@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AMP Proxy</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Top bar -->
+  <header id="topbar">
+    <div class="topbar-left">
+      <span class="logo">AMP Proxy</span>
+      <span id="topbar-dot" class="dot green"></span>
+      <span id="topbar-listen" class="dim">:9317</span>
+    </div>
+    <div class="topbar-right">
+      <span id="topbar-token"></span>
+      <span class="dim" id="topbar-uptime"></span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      <a class="nav-item active" data-page="overview" title="Overview">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      </a>
+      <a class="nav-item" data-page="providers" title="Providers">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+      </a>
+      <a class="nav-item" data-page="models" title="Models">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="1.5" fill="currentColor"/><circle cx="16" cy="12" r="1.5" fill="currentColor"/><circle cx="10" cy="18" r="1.5" fill="currentColor"/></svg>
+      </a>
+      <a class="nav-item" data-page="logs" title="Logs">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      </a>
+      <a class="nav-item" data-page="stats" title="Stats">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      </a>
+    </nav>
+
+    <!-- Content -->
+    <main id="content"></main>
+  </div>
+
+  <script src="api.js"></script>
+  <script src="overview.js"></script>
+  <script src="providers.js"></script>
+  <script src="logs.js"></script>
+  <script src="stats.js"></script>
+  <script src="models.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

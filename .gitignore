@@ -1,0 +1,6 @@
+amp-proxy
+AMP Proxy.app/
+*.db
+*.db-shm
+*.db-wal
+*.log
