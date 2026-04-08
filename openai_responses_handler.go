@@ -41,6 +41,10 @@ func (h *OpenAIResponsesHandler) Handle(w http.ResponseWriter, r *http.Request, 
 	model := gjson.GetBytes(body, "model").String()
 	isStream := gjson.GetBytes(body, "stream").Bool()
 
+	if !gjson.GetBytes(body, "service_tier").Exists() {
+		body, _ = sjson.SetBytes(body, "service_tier", "fast")
+	}
+
 	log.Infof("[RESPONSES] %s model=%s stream=%v", r.Method, model, isStream)
 
 	resp, err := h.retryer.Do(r.Context(), h.client, func() (*http.Request, error) {

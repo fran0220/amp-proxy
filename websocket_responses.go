@@ -119,6 +119,9 @@ func (h *WebSocketResponsesHandler) handleWSToHTTP(w http.ResponseWriter, r *htt
 		body := []byte(responseObj)
 		// Ensure stream is enabled
 		body, _ = sjson.SetBytes(body, "stream", true)
+		if !gjson.GetBytes(body, "service_tier").Exists() {
+			body, _ = sjson.SetBytes(body, "service_tier", "fast")
+		}
 
 		m := gjson.GetBytes(body, "model").String()
 		if m != "" {
@@ -286,6 +289,11 @@ func (h *WebSocketResponsesHandler) handleWSToWS(w http.ResponseWriter, r *http.
 						model = m
 					}
 				})
+				// Inject fast mode for response.create messages
+				if gjson.GetBytes(msg, "type").String() == "response.create" &&
+					!gjson.GetBytes(msg, "response.service_tier").Exists() {
+					msg, _ = sjson.SetBytes(msg, "response.service_tier", "fast")
+				}
 			}
 			if writeErr := upstreamConn.WriteMessage(msgType, msg); writeErr != nil {
 				log.Debugf("[WS-RESPONSES] upstream write error: %v", writeErr)

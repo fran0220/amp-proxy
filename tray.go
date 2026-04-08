@@ -87,20 +87,35 @@ func refreshTray(cfg *Config, authResolver *AuthResolver, logger *RequestLogger,
 
 	authStatus := authResolver.AuthStatus()
 
-	// Token (Claude keychain as primary indicator)
+	// Determine overall health: green if any provider has local or apikey auth
+	anyAvailable := false
+	for _, key := range []string{"claude", "openai", "gemini"} {
+		info, _ := authStatus[key].(map[string]any)
+		if localOK, _ := info["local_available"].(bool); localOK {
+			anyAvailable = true
+		}
+		if apikeyOK, _ := info["apikey_available"].(bool); apikeyOK {
+			anyAvailable = true
+		}
+	}
+	if anyAvailable {
+		systray.SetIcon(iconGreen)
+	} else {
+		systray.SetIcon(iconRed)
+	}
+
+	// Token line: show Claude keychain status as informational
 	claudeAuth := authStatus["claude"].(map[string]any)
 	claudeLocalOK, _ := claudeAuth["local_available"].(bool)
 	if claudeLocalOK {
 		exp, _ := claudeAuth["local_expires_in"].(string)
 		mToken.SetTitle(fmt.Sprintf("Claude Keychain: Valid (%s)", exp))
-		systray.SetIcon(iconGreen)
 	} else {
 		msg := "unavailable"
 		if e, ok := claudeAuth["local_error"].(string); ok {
 			msg = e
 		}
 		mToken.SetTitle("Claude Keychain: " + msg)
-		systray.SetIcon(iconRed)
 	}
 
 	// Providers

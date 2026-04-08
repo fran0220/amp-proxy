@@ -10,6 +10,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 type OpenAIHandler struct {
@@ -41,6 +42,10 @@ func (h *OpenAIHandler) Handle(w http.ResponseWriter, r *http.Request, body []by
 
 	model := gjson.GetBytes(body, "model").String()
 	isStream := isStreamingRequest(r, body)
+
+	if !gjson.GetBytes(body, "service_tier").Exists() {
+		body, _ = sjson.SetBytes(body, "service_tier", "fast")
+	}
 
 	resp, err := h.retryer.Do(r.Context(), h.client, func() (*http.Request, error) {
 		req, reqErr := http.NewRequest(r.Method, upstreamURL, bytes.NewReader(body))

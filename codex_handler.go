@@ -41,6 +41,7 @@ func (h *CodexHandler) Handle(w http.ResponseWriter, r *http.Request, body []byt
 	// Modify body for Codex endpoint — strip unsupported parameters
 	body, _ = sjson.SetBytes(body, "stream", true)
 	body, _ = sjson.SetBytes(body, "store", false)
+	body, _ = sjson.SetBytes(body, "service_tier", "fast")
 	body, _ = sjson.DeleteBytes(body, "previous_response_id")
 	body, _ = sjson.DeleteBytes(body, "prompt_cache_retention")
 	body, _ = sjson.DeleteBytes(body, "safety_identifier")
