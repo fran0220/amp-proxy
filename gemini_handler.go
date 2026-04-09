@@ -142,12 +142,25 @@ func (h *GeminiHandler) streamResponse(w http.ResponseWriter, body io.Reader) To
 	return TokenUsage{}
 }
 
-// extractGeminiPath strips the /api/provider/google prefix.
-// Handles both /api/provider/google/v1beta1/... and /api/provider/google/v1beta/...
+// extractGeminiPath strips the /api/provider/google prefix and normalizes
+// Vertex AI style paths to AI Studio style paths.
+// e.g. /api/provider/google/v1beta1/publishers/google/models/gemini-3-flash:generateContent
+//   -> /v1beta/models/gemini-3-flash:generateContent
 func extractGeminiPath(path string) string {
 	const prefix = "/api/provider/google"
 	if strings.HasPrefix(path, prefix) {
-		return path[len(prefix):]
+		path = path[len(prefix):]
+	}
+	// Normalize Vertex AI path: /v1beta1/publishers/google/models/... -> /v1beta/models/...
+	if idx := strings.Index(path, "/publishers/"); idx >= 0 {
+		modelsIdx := strings.Index(path[idx:], "/models/")
+		if modelsIdx >= 0 {
+			path = "/v1beta" + path[idx+modelsIdx:]
+		}
+	}
+	// Normalize version: v1beta1 -> v1beta
+	if strings.HasPrefix(path, "/v1beta1/") {
+		path = "/v1beta/" + path[len("/v1beta1/"):]
 	}
 	return path
 }
