@@ -154,6 +154,8 @@ func applyDirectClaudeHeaders(req *http.Request, original *http.Request, auth *P
 }
 
 // streamResponsePassthrough copies SSE stream without modification, capturing usage.
+// Claude SSE streams emit usage in the "message_delta" event's data line, not the last data line.
+// We scan every data line for usage and keep the best (non-zero) result.
 func (h *ClaudeHandler) streamResponsePassthrough(w http.ResponseWriter, body io.Reader) TokenUsage {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -162,27 +164,26 @@ func (h *ClaudeHandler) streamResponsePassthrough(w http.ResponseWriter, body io
 		return ParseClaudeUsage(data)
 	}
 
-	var lastDataLine []byte
+	var usage TokenUsage
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(nil, 10*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if bytes.HasPrefix(line, []byte("data: ")) {
-			lastDataLine = make([]byte, len(line))
-			copy(lastDataLine, line)
+			if u := ParseClaudeUsage(line[len("data: "):]); u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheCreateTokens > 0 {
+				usage = u
+			}
 		}
 		_, _ = w.Write(line)
 		_, _ = w.Write([]byte("\n"))
 		flusher.Flush()
 	}
 
-	if lastDataLine != nil {
-		return ParseClaudeUsage(lastDataLine[len("data: "):])
-	}
-	return TokenUsage{}
+	return usage
 }
 
 // streamResponseWithRename copies SSE stream, renaming tools and capturing usage.
+// Same fix as streamResponsePassthrough: scan all data lines for usage instead of only the last.
 func (h *ClaudeHandler) streamResponseWithRename(w http.ResponseWriter, body io.Reader) TokenUsage {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -192,15 +193,16 @@ func (h *ClaudeHandler) streamResponseWithRename(w http.ResponseWriter, body io.
 		return ParseClaudeUsage(data)
 	}
 
-	var lastDataLine []byte
+	var usage TokenUsage
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(nil, 10*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		line = renameToolsInSSELine(line)
 		if bytes.HasPrefix(line, []byte("data: ")) {
-			lastDataLine = make([]byte, len(line))
-			copy(lastDataLine, line)
+			if u := ParseClaudeUsage(line[len("data: "):]); u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheCreateTokens > 0 {
+				usage = u
+			}
 		}
 		_, _ = w.Write(line)
 		_, _ = w.Write([]byte("\n"))
@@ -210,10 +212,7 @@ func (h *ClaudeHandler) streamResponseWithRename(w http.ResponseWriter, body io.
 		log.Warnf("SSE stream scan error: %v", err)
 	}
 
-	if lastDataLine != nil {
-		return ParseClaudeUsage(lastDataLine[len("data: "):])
-	}
-	return TokenUsage{}
+	return usage
 }
 
 func extractAnthropicPath(path string) string {
