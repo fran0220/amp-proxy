@@ -3,7 +3,7 @@ set -e
 
 APP_NAME="AMP Proxy"
 BUNDLE_ID="com.amp-proxy.app"
-VERSION="1.0.0"
+VERSION="${VERSION:-dev}"
 BINARY="amp-proxy"
 APP_DIR="${APP_NAME}.app"
 
@@ -11,7 +11,7 @@ echo "=== Building ${APP_NAME} macOS app ==="
 
 # 1. Build universal binary (arm64)
 echo "→ Compiling..."
-CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o "${BINARY}" .
+CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w -X main.version=${VERSION}" -o "${BINARY}" .
 
 # 2. Create .app bundle structure
 echo "→ Creating app bundle..."

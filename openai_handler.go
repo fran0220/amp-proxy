@@ -112,14 +112,15 @@ func (h *OpenAIHandler) streamResponse(w http.ResponseWriter, body io.Reader) To
 		return ParseOpenAIUsage(data)
 	}
 
-	var lastDataLine []byte
+	var usage TokenUsage
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(nil, 10*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if bytes.HasPrefix(line, []byte("data: ")) {
-			lastDataLine = make([]byte, len(line))
-			copy(lastDataLine, line)
+			if u := ParseOpenAIUsage(line[len("data: "):]); u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 {
+				usage = u
+			}
 		}
 		_, _ = w.Write(line)
 		_, _ = w.Write([]byte("\n"))
@@ -129,10 +130,7 @@ func (h *OpenAIHandler) streamResponse(w http.ResponseWriter, body io.Reader) To
 		log.Warnf("openai SSE stream scan error: %v", err)
 	}
 
-	if lastDataLine != nil {
-		return ParseOpenAIUsage(lastDataLine[len("data: "):])
-	}
-	return TokenUsage{}
+	return usage
 }
 
 func extractOpenAIPath(path string) string {

@@ -61,6 +61,8 @@ func (s *AdminServer) Start(addr string) {
 	mux.HandleFunc("/api/keys/test", s.handleTestAPIKey)
 	mux.HandleFunc("/api/keys/discover", s.handleDiscoverModels)
 	mux.HandleFunc("/api/custom-provider", s.handleCustomProvider)
+	mux.HandleFunc("/api/version", s.handleVersion)
+	mux.HandleFunc("/api/update/check", s.handleCheckUpdate)
 
 	// Embedded web UI
 	webContent, err := fs.Sub(webFS, "web")

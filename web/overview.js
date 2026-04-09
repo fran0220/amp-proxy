@@ -45,15 +45,15 @@ function refreshOverview() {
     var s = d.stats || {};
     var sEl = document.getElementById('ov-stats');
     if (sEl) {
-      var cached = 0;
-      Object.values(s.by_model || {}).forEach(function(m) { cached += m.total_cached_tokens || 0; });
-      var totalTok = (s.total_input_tokens || 0) + (s.total_output_tokens || 0);
+      var totalTok = s.total_tokens || 0;
       sEl.innerHTML =
         statBox(s.total_requests, 'Requests') +
         statBox(s.total_errors, 'Errors') +
-        statBox(fmtTokens(s.total_input_tokens), 'Input Tokens') +
+        statBox(fmtTokens(s.total_logical_input_tokens), 'Prompt Tokens') +
+        statBox(fmtTokens(s.total_fresh_input_tokens), 'Fresh Prompt') +
+        statBox(fmtTokens(s.total_cache_read_tokens), 'Cache Read') +
+        statBox(fmtTokens(s.total_cache_create_tokens), 'Cache Write') +
         statBox(fmtTokens(s.total_output_tokens), 'Output Tokens') +
-        statBox(fmtTokens(cached), 'Cache Hit') +
         statBox(fmtTokens(totalTok), 'Total Tokens');
     }
 

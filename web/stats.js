@@ -49,7 +49,7 @@ function renderStats(el) {
     '<div class="card"><h3>Hourly Distribution (Last 24h)</h3><div id="st-hourly"></div></div>' +
     '<div class="card"><h3>Provider Distribution</h3><div id="st-prov"></div></div>' +
     '<div class="card"><h3>By Model</h3><div class="table-wrap"><table>' +
-      '<thead><tr><th>Model</th><th>Role</th><th>Provider</th><th>Requests</th><th>Errors</th><th>Input</th><th>Output</th><th>Cache</th><th>Hit Rate</th><th>Total</th></tr></thead>' +
+      '<thead><tr><th>Model</th><th>Role</th><th>Provider</th><th>Requests</th><th>Errors</th><th>Prompt</th><th>Fresh</th><th>Cache Read</th><th>Output</th><th>Hit Rate</th><th>Total</th></tr></thead>' +
       '<tbody id="st-models"></tbody></table></div></div>';
 
   syncStatsFilterUI();
@@ -177,18 +177,22 @@ function renderSummaryGrid(s, tokens) {
   var grid = document.getElementById('st-grid');
   if (!grid) return;
 
-  var cacheTotal = (tokens && tokens.cache_total) || 0;
-  var billable = (tokens && tokens.total_billable) || 0;
-  var totalAll = (tokens && tokens.total_all) || 0;
+  var prompt = (tokens && tokens.logical_input) || 0;
+  var fresh = (tokens && tokens.fresh_input) || 0;
+  var cacheRead = (tokens && tokens.cache_read) || 0;
+  var cacheCreate = (tokens && tokens.cache_create) || 0;
+  var output = (tokens && tokens.output) || 0;
+  var totalTok = (tokens && tokens.total_tokens) || 0;
 
   grid.innerHTML =
     sBox(fmtNum(s.total_requests), 'Requests', 'blue') +
     sBox(fmtNum(s.total_errors), 'Errors', s.total_errors > 0 ? 'red' : 'dim') +
-    sBox(fmtTokens(s.total_input_tokens), 'Input Tokens', 'purple') +
-    sBox(fmtTokens(s.total_output_tokens), 'Output Tokens', 'green') +
-    sBox(fmtTokens(cacheTotal), 'Cache Tokens', 'yellow') +
-    sBox(fmtTokens(billable), 'Billable Tokens', 'white') +
-    sBox(fmtTokens(totalAll), 'All Tokens', 'white');
+    sBox(fmtTokens(prompt), 'Prompt Tokens', 'purple') +
+    sBox(fmtTokens(fresh), 'Fresh Prompt', 'blue') +
+    sBox(fmtTokens(cacheRead), 'Cache Read', 'yellow') +
+    sBox(fmtTokens(cacheCreate), 'Cache Write', 'dim') +
+    sBox(fmtTokens(output), 'Output Tokens', 'green') +
+    sBox(fmtTokens(totalTok), 'Total Tokens', 'white');
 }
 
 function renderTokenBreakdown(tokens) {
@@ -196,12 +200,12 @@ function renderTokenBreakdown(tokens) {
   if (!el || !tokens) return;
 
   var items = [
-    { label: 'Input', value: tokens.input || 0, color: '#a78bfa' },
-    { label: 'Output', value: tokens.output || 0, color: '#34d399' },
+    { label: 'Direct Prompt', value: tokens.direct_input || 0, color: '#a78bfa' },
+    { label: 'Cache Write', value: tokens.cache_create || 0, color: '#60a5fa' },
     { label: 'Cache Read', value: tokens.cache_read || 0, color: '#fbbf24' },
-    { label: 'Cache Create', value: tokens.cache_create || 0, color: '#60a5fa' }
+    { label: 'Output', value: tokens.output || 0, color: '#34d399' },
   ];
-  var total = (tokens.total_all || 0) || items.reduce(function(sum, i) { return sum + i.value; }, 0) || 1;
+  var total = (tokens.total_tokens || 0) || items.reduce(function(sum, i) { return sum + i.value; }, 0) || 1;
 
   el.innerHTML = items.map(function(item) {
     var pct = ((item.value / total) * 100).toFixed(1);
@@ -228,10 +232,11 @@ function renderRouteDistribution(routes) {
     var pct = ((r.requests / total) * 100).toFixed(1);
     var label = (r.route || 'unknown').toLowerCase();
     var c = colors[label] || '#6b7280';
+    var tok = r.total_tokens || ((r.logical_input_tokens || r.input_tokens || 0) + (r.output_tokens || 0));
     return '<div class="pbar">' +
       '<div class="pbar-label"><span class="pbar-dot" style="background:' + c + '"></span>' + label + '</div>' +
       '<div class="pbar-track"><div class="pbar-fill" style="width:' + pct + '%;background:' + c + '"></div></div>' +
-      '<div class="pbar-val">' + r.requests + ' (' + pct + '%) | ' + fmtTokens((r.input_tokens || 0) + (r.output_tokens || 0)) + ' tok</div></div>';
+      '<div class="pbar-val">' + r.requests + ' (' + pct + '%) | ' + fmtTokens(tok) + ' tok</div></div>';
   }).join('');
 }
 
@@ -245,12 +250,13 @@ function renderDailyChart(daily) {
   }
 
   var maxReq = Math.max.apply(null, daily.map(function(d) { return d.requests; })) || 1;
-  var maxTok = Math.max.apply(null, daily.map(function(d) { return d.input_tokens + d.output_tokens; })) || 1;
+  var maxTok = Math.max.apply(null, daily.map(function(d) { return d.total_tokens || (d.logical_input_tokens + d.output_tokens); })) || 1;
 
   el.innerHTML = '<div class="daily-chart">' + daily.map(function(d) {
     var dayLabel = d.day.slice(5);
     var reqPct = ((d.requests / maxReq) * 100).toFixed(0);
-    var tokPct = (((d.input_tokens + d.output_tokens) / maxTok) * 100).toFixed(0);
+    var totalTok = d.total_tokens || (d.logical_input_tokens + d.output_tokens);
+    var tokPct = ((totalTok / maxTok) * 100).toFixed(0);
     return '<div class="daily-row">' +
       '<div class="daily-label">' + dayLabel + '</div>' +
       '<div class="daily-bars">' +
@@ -259,8 +265,9 @@ function renderDailyChart(daily) {
           '<div class="daily-bar tok" style="width:' + tokPct + '%"></div>' +
         '</div>' +
       '</div>' +
-      '<div class="daily-val">' + d.requests + ' req / ' + fmtTokens(d.input_tokens + d.output_tokens) + ' tok' +
-        (d.cached_tokens > 0 ? ' / <span style="color:#fbbf24">' + fmtTokens(d.cached_tokens) + ' cache</span>' : '') +
+      '<div class="daily-val">' + d.requests + ' req / ' + fmtTokens(totalTok) + ' tok' +
+        (d.cached_tokens > 0 ? ' / <span style="color:#fbbf24">' + fmtTokens(d.cached_tokens) + ' cache read</span>' : '') +
+        (d.cache_create_tokens > 0 ? ' / <span style="color:#60a5fa">' + fmtTokens(d.cache_create_tokens) + ' cache write</span>' : '') +
         (d.errors > 0 ? ' <span style="color:#f87171">' + d.errors + ' err</span>' : '') + '</div></div>';
   }).join('') + '</div>' +
   '<div class="chart-legend">' +
@@ -291,7 +298,8 @@ function renderHourlyChart(hourly) {
     var data = byHour[hKey];
     var intensity = data ? Math.min(((data.requests / maxReq) * 100), 100) : 0;
     var bg = intensity > 0 ? 'rgba(96,165,250,' + (0.15 + intensity * 0.0085) + ')' : '#1e1e2a';
-    var title = hKey + ': ' + (data ? data.requests + ' req, ' + fmtTokens((data.input_tokens || 0) + (data.output_tokens || 0)) + ' tok' + (data.cached_tokens > 0 ? ', ' + fmtTokens(data.cached_tokens) + ' cache' : '') : 'no data');
+    var totalTok = data ? (data.total_tokens || ((data.logical_input_tokens || 0) + (data.output_tokens || 0))) : 0;
+    var title = hKey + ': ' + (data ? data.requests + ' req, ' + fmtTokens(totalTok) + ' tok' + (data.cached_tokens > 0 ? ', ' + fmtTokens(data.cached_tokens) + ' cache read' : '') + (data.cache_create_tokens > 0 ? ', ' + fmtTokens(data.cache_create_tokens) + ' cache write' : '') : 'no data');
     cells += '<div class="hour-cell" style="background:' + bg + '" title="' + title + '">' +
       '<div class="hour-label">' + (i < 10 ? '0' : '') + i + '</div>' +
       (data ? '<div class="hour-val">' + data.requests + '</div>' : '') + '</div>';
@@ -305,10 +313,9 @@ function renderProviderDist(s) {
   var summary = {};
   models.forEach(function(m) {
     var p = m.provider || 'unknown';
-    if (!summary[p]) summary[p] = { requests: 0, input: 0, output: 0, errors: 0 };
+    if (!summary[p]) summary[p] = { requests: 0, total: 0, errors: 0 };
     summary[p].requests += m.total_requests;
-    summary[p].input += m.total_input_tokens;
-    summary[p].output += m.total_output_tokens;
+    summary[p].total += m.total_tokens || ((m.total_logical_input_tokens || 0) + (m.total_output_tokens || 0));
     summary[p].errors += m.total_errors;
   });
 
@@ -329,7 +336,7 @@ function renderProviderDist(s) {
     var c = colors[p] || '#6b7280';
     return '<div class="pbar"><div class="pbar-label"><span class="pbar-dot" style="background:' + c + '"></span>' + p + '</div>' +
       '<div class="pbar-track"><div class="pbar-fill" style="width:' + pct + '%;background:' + c + '"></div></div>' +
-      '<div class="pbar-val">' + v.requests + ' (' + pct + '%) | ' + fmtTokens(v.input + v.output) + ' tok</div></div>';
+      '<div class="pbar-val">' + v.requests + ' (' + pct + '%) | ' + fmtTokens(v.total) + ' tok</div></div>';
   }).join('');
 }
 
@@ -339,7 +346,7 @@ function renderModelTable(s) {
   if (!tbody) return;
 
   if (models.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" class="dim" style="text-align:center">No data yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="dim" style="text-align:center">No data yet</td></tr>';
     return;
   }
 
@@ -348,18 +355,21 @@ function renderModelTable(s) {
     var info = _statsRoles[m.model] || {};
     var role = info.role || '';
     var prov = m.provider || info.provider || '';
-    var totalTok = (m.total_input_tokens || 0) + (m.total_output_tokens || 0) + (m.total_cached_tokens || 0);
+    var totalTok = m.total_tokens || ((m.total_logical_input_tokens || 0) + (m.total_output_tokens || 0));
+    var hitBase = m.total_logical_input_tokens || 0;
+    var hitRate = hitBase > 0 ? ((m.total_cached_tokens || 0) / hitBase) * 100 : 0;
     return '<tr><td><code>' + m.model + '</code></td>' +
       '<td><span class="role-tag">' + role + '</span></td>' +
       '<td class="dim">' + prov + '</td>' +
       '<td>' + fmtNum(m.total_requests) + '</td>' +
       '<td>' + (m.total_errors > 0 ? '<span style="color:#f87171">' + m.total_errors + '</span>' : '0') + '</td>' +
-      '<td>' + fmtTokens(m.total_input_tokens) + '</td>' +
-      '<td>' + fmtTokens(m.total_output_tokens) + '</td>' +
+      '<td>' + fmtTokens(m.total_logical_input_tokens) + '</td>' +
+      '<td>' + fmtTokens(m.total_fresh_input_tokens) + '</td>' +
       '<td>' + fmtTokens(m.total_cached_tokens) + '</td>' +
+      '<td>' + fmtTokens(m.total_output_tokens) + '</td>' +
       '<td>' + (function() {
-        var hr = m.total_input_tokens > 0 ? ((m.total_cached_tokens / m.total_input_tokens) * 100).toFixed(1) : 0;
-        var hrStr = m.total_input_tokens > 0 ? hr + '%' : '--';
+        var hr = hitBase > 0 ? hitRate.toFixed(1) : 0;
+        var hrStr = hitBase > 0 ? hr + '%' : '--';
         var hrColor = hr > 50 ? '#34d399' : hr > 20 ? '#fbbf24' : '#6b7280';
         return '<span style="color:' + hrColor + '">' + hrStr + '</span>';
       })() + '</td>' +

@@ -20,10 +20,21 @@ func ParseClaudeUsage(data []byte) TokenUsage {
 // ParseOpenAIUsage extracts token usage from an OpenAI API response or SSE data event.
 // OpenAI format: {"usage":{"prompt_tokens":N,"completion_tokens":N,"total_tokens":N}}
 // Responses API: {"usage":{"input_tokens":N,"output_tokens":N}}
+// Streaming Responses API events often nest usage under {"response":{"usage":...}}.
+// Some callers also pass the raw usage object directly.
 func ParseOpenAIUsage(data []byte) TokenUsage {
 	usage := gjson.GetBytes(data, "usage")
 	if !usage.Exists() {
-		return TokenUsage{}
+		usage = gjson.GetBytes(data, "response.usage")
+	}
+	if !usage.Exists() {
+		root := gjson.ParseBytes(data)
+		if root.Get("input_tokens").Exists() || root.Get("prompt_tokens").Exists() ||
+			root.Get("output_tokens").Exists() || root.Get("completion_tokens").Exists() {
+			usage = root
+		} else {
+			return TokenUsage{}
+		}
 	}
 
 	input := usage.Get("input_tokens").Int()

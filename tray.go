@@ -18,7 +18,7 @@ func onTrayReady(cfg *Config, tokenMgr *TokenManager, logger *RequestLogger, aut
 		systray.SetIcon(iconGreen)
 		systray.SetTooltip("AMP Proxy")
 
-		mStatus := systray.AddMenuItem(fmt.Sprintf("AMP Proxy - Running %s", cfg.Listen), "")
+		mStatus := systray.AddMenuItem(fmt.Sprintf("AMP Proxy %s - Running %s", version, cfg.Listen), "")
 		mStatus.Disable()
 
 		mToken := systray.AddMenuItem("Token: checking...", "")
@@ -42,6 +42,7 @@ func onTrayReady(cfg *Config, tokenMgr *TokenManager, logger *RequestLogger, aut
 
 		mRefresh := systray.AddMenuItem("Reload Token", "")
 		mDashboard := systray.AddMenuItem("Open Dashboard", "")
+		mUpdate := systray.AddMenuItem("Check for Updates", "")
 
 		systray.AddSeparator()
 
@@ -49,6 +50,16 @@ func onTrayReady(cfg *Config, tokenMgr *TokenManager, logger *RequestLogger, aut
 
 		// Initial refresh
 		refreshTray(cfg, authResolver, logger, mToken, mClaude, mOpenAI, mGemini, mStats)
+
+		// Background auto-check for updates
+		go func() {
+			time.Sleep(10 * time.Second)
+			updater := NewUpdater()
+			info, err := updater.Check()
+			if err == nil && info.Available {
+				mUpdate.SetTitle("Update to " + info.LatestVersion + " available")
+			}
+		}()
 
 		go func() {
 			ticker := time.NewTicker(30 * time.Second)
@@ -70,6 +81,47 @@ func onTrayReady(cfg *Config, tokenMgr *TokenManager, logger *RequestLogger, aut
 					}
 				case <-mDashboard.ClickedCh:
 					_ = exec.Command("open", "http://localhost:9318").Start()
+				case <-mUpdate.ClickedCh:
+					go func() {
+						mUpdate.SetTitle("Checking...")
+						mUpdate.Disable()
+						updater := NewUpdater()
+						info, err := updater.Check()
+						if err != nil {
+							log.Errorf("update check failed: %v", err)
+							mUpdate.SetTitle("Update check failed")
+							time.AfterFunc(5*time.Second, func() {
+								mUpdate.SetTitle("Check for Updates")
+								mUpdate.Enable()
+							})
+							return
+						}
+						if !info.Available {
+							mUpdate.SetTitle("Up to date (" + version + ")")
+							time.AfterFunc(5*time.Second, func() {
+								mUpdate.SetTitle("Check for Updates")
+								mUpdate.Enable()
+							})
+							return
+						}
+						mUpdate.SetTitle("Update to " + info.LatestVersion + "...")
+						mUpdate.Enable()
+						// Wait for click to install
+						<-mUpdate.ClickedCh
+						mUpdate.SetTitle("Downloading...")
+						mUpdate.Disable()
+						if err := updater.Apply(info); err != nil {
+							log.Errorf("update failed: %v", err)
+							mUpdate.SetTitle("Update failed: " + err.Error())
+							time.AfterFunc(5*time.Second, func() {
+								mUpdate.SetTitle("Check for Updates")
+								mUpdate.Enable()
+							})
+							return
+						}
+						mUpdate.SetTitle("Restarting...")
+						systray.Quit()
+					}()
 				case <-mQuit.ClickedCh:
 					systray.Quit()
 				}

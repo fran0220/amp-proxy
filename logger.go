@@ -32,49 +32,73 @@ type TokenUsage struct {
 }
 
 type ModelStats struct {
-	Model         string `json:"model"`
-	Provider      string `json:"provider"`
-	TotalRequests int64  `json:"total_requests"`
-	TotalErrors   int64  `json:"total_errors"`
-	TotalInput    int64  `json:"total_input_tokens"`
-	TotalOutput   int64  `json:"total_output_tokens"`
-	TotalCached   int64  `json:"total_cached_tokens"`
+	Model             string `json:"model"`
+	Provider          string `json:"provider"`
+	TotalRequests     int64  `json:"total_requests"`
+	TotalErrors       int64  `json:"total_errors"`
+	TotalInput        int64  `json:"total_input_tokens"`
+	TotalOutput       int64  `json:"total_output_tokens"`
+	TotalCached       int64  `json:"total_cached_tokens"`
+	TotalCacheCreate  int64  `json:"total_cache_create_tokens"`
+	TotalDirectInput  int64  `json:"total_direct_input_tokens"`
+	TotalFreshInput   int64  `json:"total_fresh_input_tokens"`
+	TotalLogicalInput int64  `json:"total_logical_input_tokens"`
+	TotalTokens       int64  `json:"total_tokens"`
 }
 
 type RequestStats struct {
-	TotalRequests     int64                  `json:"total_requests"`
-	TotalErrors       int64                  `json:"total_errors"`
-	TotalInputTokens  int64                  `json:"total_input_tokens"`
-	TotalOutputTokens int64                  `json:"total_output_tokens"`
-	Uptime            string                 `json:"uptime"`
-	ByModel           map[string]*ModelStats `json:"by_model"`
+	TotalRequests           int64                  `json:"total_requests"`
+	TotalErrors             int64                  `json:"total_errors"`
+	TotalInputTokens        int64                  `json:"total_input_tokens"`
+	TotalOutputTokens       int64                  `json:"total_output_tokens"`
+	TotalCacheReadTokens    int64                  `json:"total_cache_read_tokens"`
+	TotalCacheCreateTokens  int64                  `json:"total_cache_create_tokens"`
+	TotalDirectInputTokens  int64                  `json:"total_direct_input_tokens"`
+	TotalFreshInputTokens   int64                  `json:"total_fresh_input_tokens"`
+	TotalLogicalInputTokens int64                  `json:"total_logical_input_tokens"`
+	TotalTokens             int64                  `json:"total_tokens"`
+	Uptime                  string                 `json:"uptime"`
+	ByModel                 map[string]*ModelStats `json:"by_model"`
 }
 
 type DayStats struct {
-	Day               string `json:"day"`
-	Requests          int64  `json:"requests"`
-	Errors            int64  `json:"errors"`
-	InputTokens       int64  `json:"input_tokens"`
-	OutputTokens      int64  `json:"output_tokens"`
-	CachedTokens      int64  `json:"cached_tokens"`
-	CacheCreateTokens int64  `json:"cache_create_tokens"`
+	Day                string `json:"day"`
+	Requests           int64  `json:"requests"`
+	Errors             int64  `json:"errors"`
+	InputTokens        int64  `json:"input_tokens"`
+	OutputTokens       int64  `json:"output_tokens"`
+	CachedTokens       int64  `json:"cached_tokens"`
+	CacheCreateTokens  int64  `json:"cache_create_tokens"`
+	DirectInputTokens  int64  `json:"direct_input_tokens"`
+	FreshInputTokens   int64  `json:"fresh_input_tokens"`
+	LogicalInputTokens int64  `json:"logical_input_tokens"`
+	TotalTokens        int64  `json:"total_tokens"`
 }
 
 type HourStats struct {
-	Hour              string `json:"hour"`
-	Requests          int64  `json:"requests"`
-	InputTokens       int64  `json:"input_tokens"`
-	OutputTokens      int64  `json:"output_tokens"`
-	CachedTokens      int64  `json:"cached_tokens"`
-	CacheCreateTokens int64  `json:"cache_create_tokens"`
+	Hour               string `json:"hour"`
+	Requests           int64  `json:"requests"`
+	InputTokens        int64  `json:"input_tokens"`
+	OutputTokens       int64  `json:"output_tokens"`
+	CachedTokens       int64  `json:"cached_tokens"`
+	CacheCreateTokens  int64  `json:"cache_create_tokens"`
+	DirectInputTokens  int64  `json:"direct_input_tokens"`
+	FreshInputTokens   int64  `json:"fresh_input_tokens"`
+	LogicalInputTokens int64  `json:"logical_input_tokens"`
+	TotalTokens        int64  `json:"total_tokens"`
 }
 
 type RouteStats struct {
-	Route        string `json:"route"`
-	Requests     int64  `json:"requests"`
-	InputTokens  int64  `json:"input_tokens"`
-	OutputTokens int64  `json:"output_tokens"`
-	CachedTokens int64  `json:"cached_tokens"`
+	Route              string `json:"route"`
+	Requests           int64  `json:"requests"`
+	InputTokens        int64  `json:"input_tokens"`
+	OutputTokens       int64  `json:"output_tokens"`
+	CachedTokens       int64  `json:"cached_tokens"`
+	CacheCreateTokens  int64  `json:"cache_create_tokens"`
+	DirectInputTokens  int64  `json:"direct_input_tokens"`
+	FreshInputTokens   int64  `json:"fresh_input_tokens"`
+	LogicalInputTokens int64  `json:"logical_input_tokens"`
+	TotalTokens        int64  `json:"total_tokens"`
 }
 
 type StatsFilter struct {
@@ -86,14 +110,16 @@ type StatsFilter struct {
 }
 
 type TokenTotals struct {
-	Input         int64 `json:"input"`
-	Output        int64 `json:"output"`
-	CacheRead     int64 `json:"cache_read"`
-	CacheCreate   int64 `json:"cache_create"`
-	CacheTotal    int64 `json:"cache_total"`
-	TotalBillable int64 `json:"total_billable"`
-	TotalAll      int64 `json:"total_all"`
-	Total         int64 `json:"total"`
+	Input        int64 `json:"input"`
+	Output       int64 `json:"output"`
+	CacheRead    int64 `json:"cache_read"`
+	CacheCreate  int64 `json:"cache_create"`
+	CacheTotal   int64 `json:"cache_total"`
+	DirectInput  int64 `json:"direct_input"`
+	FreshInput   int64 `json:"fresh_input"`
+	LogicalInput int64 `json:"logical_input"`
+	TotalTokens  int64 `json:"total_tokens"`
+	Total        int64 `json:"total"`
 }
 
 // RequestLogger provides logging with SQLite persistence and a short-lived stats cache.

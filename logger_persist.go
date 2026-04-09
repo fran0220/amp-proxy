@@ -130,6 +130,28 @@ func routeBucketExpr() string {
 		"ELSE LOWER(route) END"
 }
 
+func directInputExpr() string {
+	return "CASE " +
+		"WHEN LOWER(provider) = 'openai' THEN CASE WHEN input_tokens > cache_read_tokens THEN input_tokens - cache_read_tokens ELSE 0 END " +
+		"ELSE input_tokens END"
+}
+
+func freshInputExpr() string {
+	return "CASE " +
+		"WHEN LOWER(provider) = 'openai' THEN CASE WHEN input_tokens > cache_read_tokens THEN input_tokens - cache_read_tokens ELSE 0 END " +
+		"ELSE input_tokens + cache_create_tokens END"
+}
+
+func logicalInputExpr() string {
+	return "CASE " +
+		"WHEN LOWER(provider) = 'openai' THEN input_tokens " +
+		"ELSE input_tokens + cache_read_tokens + cache_create_tokens END"
+}
+
+func totalTokensExpr() string {
+	return "(" + logicalInputExpr() + " + output_tokens)"
+}
+
 func buildStatsWhere(filter StatsFilter) (string, []any) {
 	var conditions []string
 	var args []any
@@ -169,10 +191,19 @@ func (s *DBStore) QueryStats(filter StatsFilter) (RequestStats, error) {
 		SELECT COALESCE(COUNT(*),0),
 		       COALESCE(SUM(CASE WHEN status >= 400 OR error != '' THEN 1 ELSE 0 END),0),
 		       COALESCE(SUM(input_tokens),0),
-		       COALESCE(SUM(output_tokens),0)
+		       COALESCE(SUM(output_tokens),0),
+		       COALESCE(SUM(cache_read_tokens),0),
+		       COALESCE(SUM(cache_create_tokens),0),
+		       COALESCE(SUM(`+directInputExpr()+`),0),
+		       COALESCE(SUM(`+freshInputExpr()+`),0),
+		       COALESCE(SUM(`+logicalInputExpr()+`),0),
+		       COALESCE(SUM(`+totalTokensExpr()+`),0)
 		FROM request_logs`+where, args...)
 	if err := row.Scan(&stats.TotalRequests, &stats.TotalErrors,
-		&stats.TotalInputTokens, &stats.TotalOutputTokens); err != nil {
+		&stats.TotalInputTokens, &stats.TotalOutputTokens,
+		&stats.TotalCacheReadTokens, &stats.TotalCacheCreateTokens,
+		&stats.TotalDirectInputTokens, &stats.TotalFreshInputTokens,
+		&stats.TotalLogicalInputTokens, &stats.TotalTokens); err != nil {
 		return stats, err
 	}
 
@@ -182,7 +213,12 @@ func (s *DBStore) QueryStats(filter StatsFilter) (RequestStats, error) {
 		       SUM(CASE WHEN status >= 400 OR error != '' THEN 1 ELSE 0 END) as errs,
 		       SUM(input_tokens) as inp,
 		       SUM(output_tokens) as outp,
-		       SUM(cache_read_tokens) as cached
+		       SUM(cache_read_tokens) as cached,
+		       SUM(cache_create_tokens) as cc,
+		       SUM(` + directInputExpr() + `) as direct_inp,
+		       SUM(` + freshInputExpr() + `) as fresh_inp,
+		       SUM(` + logicalInputExpr() + `) as logical_inp,
+		       SUM(` + totalTokensExpr() + `) as total_tok
 		FROM request_logs
 	`
 	modelRowsWhere := " WHERE model != ''"
@@ -199,7 +235,9 @@ func (s *DBStore) QueryStats(filter StatsFilter) (RequestStats, error) {
 	for rows.Next() {
 		var ms ModelStats
 		if err := rows.Scan(&ms.Model, &ms.Provider, &ms.TotalRequests,
-			&ms.TotalErrors, &ms.TotalInput, &ms.TotalOutput, &ms.TotalCached); err != nil {
+			&ms.TotalErrors, &ms.TotalInput, &ms.TotalOutput, &ms.TotalCached,
+			&ms.TotalCacheCreate, &ms.TotalDirectInput, &ms.TotalFreshInput,
+			&ms.TotalLogicalInput, &ms.TotalTokens); err != nil {
 			continue
 		}
 		key := ms.Provider + "|" + ms.Model
@@ -259,7 +297,11 @@ func (s *DBStore) QueryStatsByDay(days int, filter StatsFilter) ([]DayStats, err
 		       SUM(input_tokens) as inp,
 		       SUM(output_tokens) as outp,
 		       SUM(cache_read_tokens) as cached,
-		       SUM(cache_create_tokens) as cc
+		       SUM(cache_create_tokens) as cc,
+		       SUM(`+directInputExpr()+`) as direct_inp,
+		       SUM(`+freshInputExpr()+`) as fresh_inp,
+		       SUM(`+logicalInputExpr()+`) as logical_inp,
+		       SUM(`+totalTokensExpr()+`) as total_tok
 		FROM request_logs
 	`+where+`
 		GROUP BY day
@@ -272,7 +314,9 @@ func (s *DBStore) QueryStatsByDay(days int, filter StatsFilter) ([]DayStats, err
 	var result []DayStats
 	for rows.Next() {
 		var d DayStats
-		if err := rows.Scan(&d.Day, &d.Requests, &d.Errors, &d.InputTokens, &d.OutputTokens, &d.CachedTokens, &d.CacheCreateTokens); err != nil {
+		if err := rows.Scan(&d.Day, &d.Requests, &d.Errors, &d.InputTokens, &d.OutputTokens,
+			&d.CachedTokens, &d.CacheCreateTokens, &d.DirectInputTokens,
+			&d.FreshInputTokens, &d.LogicalInputTokens, &d.TotalTokens); err != nil {
 			continue
 		}
 		result = append(result, d)
@@ -299,7 +343,11 @@ func (s *DBStore) QueryStatsByHour(hours int, filter StatsFilter) ([]HourStats, 
 		       SUM(input_tokens) as inp,
 		       SUM(output_tokens) as outp,
 		       SUM(cache_read_tokens) as cached,
-		       SUM(cache_create_tokens) as cc
+		       SUM(cache_create_tokens) as cc,
+		       SUM(`+directInputExpr()+`) as direct_inp,
+		       SUM(`+freshInputExpr()+`) as fresh_inp,
+		       SUM(`+logicalInputExpr()+`) as logical_inp,
+		       SUM(`+totalTokensExpr()+`) as total_tok
 		FROM request_logs
 	`+where+`
 		GROUP BY hour
@@ -312,7 +360,9 @@ func (s *DBStore) QueryStatsByHour(hours int, filter StatsFilter) ([]HourStats, 
 	var result []HourStats
 	for rows.Next() {
 		var h HourStats
-		if err := rows.Scan(&h.Hour, &h.Requests, &h.InputTokens, &h.OutputTokens, &h.CachedTokens, &h.CacheCreateTokens); err != nil {
+		if err := rows.Scan(&h.Hour, &h.Requests, &h.InputTokens, &h.OutputTokens,
+			&h.CachedTokens, &h.CacheCreateTokens, &h.DirectInputTokens,
+			&h.FreshInputTokens, &h.LogicalInputTokens, &h.TotalTokens); err != nil {
 			continue
 		}
 		result = append(result, h)
@@ -328,7 +378,12 @@ func (s *DBStore) QueryStatsByRoute(filter StatsFilter) ([]RouteStats, error) {
 		       COUNT(*) as reqs,
 		       SUM(input_tokens) as inp,
 		       SUM(output_tokens) as outp,
-		       SUM(cache_read_tokens) as cached
+		       SUM(cache_read_tokens) as cached,
+		       SUM(cache_create_tokens) as cc,
+		       SUM(`+directInputExpr()+`) as direct_inp,
+		       SUM(`+freshInputExpr()+`) as fresh_inp,
+		       SUM(`+logicalInputExpr()+`) as logical_inp,
+		       SUM(`+totalTokensExpr()+`) as total_tok
 		FROM request_logs
 	`+where+`
 		GROUP BY route_bucket`, args...)
@@ -340,7 +395,9 @@ func (s *DBStore) QueryStatsByRoute(filter StatsFilter) ([]RouteStats, error) {
 	var result []RouteStats
 	for rows.Next() {
 		var r RouteStats
-		if err := rows.Scan(&r.Route, &r.Requests, &r.InputTokens, &r.OutputTokens, &r.CachedTokens); err != nil {
+		if err := rows.Scan(&r.Route, &r.Requests, &r.InputTokens, &r.OutputTokens,
+			&r.CachedTokens, &r.CacheCreateTokens, &r.DirectInputTokens,
+			&r.FreshInputTokens, &r.LogicalInputTokens, &r.TotalTokens); err != nil {
 			continue
 		}
 		result = append(result, r)
@@ -356,13 +413,16 @@ func (s *DBStore) QueryTokenTotals(filter StatsFilter) (TokenTotals, error) {
 		SELECT COALESCE(SUM(input_tokens),0),
 		       COALESCE(SUM(output_tokens),0),
 		       COALESCE(SUM(cache_read_tokens),0),
-		       COALESCE(SUM(cache_create_tokens),0)
+		       COALESCE(SUM(cache_create_tokens),0),
+		       COALESCE(SUM(`+directInputExpr()+`),0),
+		       COALESCE(SUM(`+freshInputExpr()+`),0),
+		       COALESCE(SUM(`+logicalInputExpr()+`),0),
+		       COALESCE(SUM(`+totalTokensExpr()+`),0)
 		FROM request_logs`+where, args...)
-	err := row.Scan(&t.Input, &t.Output, &t.CacheRead, &t.CacheCreate)
+	err := row.Scan(&t.Input, &t.Output, &t.CacheRead, &t.CacheCreate,
+		&t.DirectInput, &t.FreshInput, &t.LogicalInput, &t.TotalTokens)
 	t.CacheTotal = t.CacheRead + t.CacheCreate
-	t.TotalBillable = t.Input + t.Output
-	t.TotalAll = t.TotalBillable + t.CacheTotal
-	t.Total = t.TotalAll
+	t.Total = t.TotalTokens
 	return t, err
 }
 

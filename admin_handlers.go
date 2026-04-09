@@ -15,6 +15,7 @@ func (s *AdminServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	status := map[string]any{
 		"running":        true,
+		"version":        version,
 		"uptime":         time.Since(s.startAt).Round(time.Second).String(),
 		"listen":         s.cfg.Listen,
 		"upstream":       s.cfg.Amp.UpstreamURL,
@@ -25,6 +26,20 @@ func (s *AdminServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"auth":           s.authResolver.AuthStatus(),
 	}
 	writeJSON(w, status)
+}
+
+func (s *AdminServer) handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]string{"version": version})
+}
+
+func (s *AdminServer) handleCheckUpdate(w http.ResponseWriter, r *http.Request) {
+	updater := NewUpdater()
+	info, err := updater.Check()
+	if err != nil {
+		writeJSON(w, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, info)
 }
 
 func (s *AdminServer) handleOverview(w http.ResponseWriter, r *http.Request) {

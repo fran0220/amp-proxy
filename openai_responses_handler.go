@@ -116,7 +116,7 @@ func (h *OpenAIResponsesHandler) streamResponse(w http.ResponseWriter, body io.R
 	// patch the response.completed event if the upstream (e.g. NewAPI) returns
 	// an empty output array.
 	var outputItems [][]byte
-	var lastDataLine []byte
+	var usage TokenUsage
 
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(nil, 10*1024*1024)
@@ -164,8 +164,10 @@ func (h *OpenAIResponsesHandler) streamResponse(w http.ResponseWriter, body io.R
 			}
 		}
 
-		lastDataLine = make([]byte, len(dataJSON))
-		copy(lastDataLine, dataJSON)
+		// Track best non-zero usage from any data line
+		if u := ParseOpenAIUsage(dataJSON); u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 {
+			usage = u
+		}
 
 		_, _ = w.Write([]byte("data: "))
 		_, _ = w.Write(dataJSON)
@@ -176,8 +178,5 @@ func (h *OpenAIResponsesHandler) streamResponse(w http.ResponseWriter, body io.R
 		log.Warnf("[RESPONSES] SSE stream scan error: %v", err)
 	}
 
-	if lastDataLine != nil {
-		return ParseOpenAIUsage(lastDataLine)
-	}
-	return TokenUsage{}
+	return usage
 }
