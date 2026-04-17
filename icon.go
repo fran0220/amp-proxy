@@ -11,11 +11,10 @@ var iconGreen = generateCirclePNG(0x34, 0xD3, 0x99) // #34D399 (emerald)
 var iconRed = generateCirclePNG(0xF8, 0x71, 0x71) // #F87171 (red)
 
 func generateCirclePNG(r, g, b byte) []byte {
-	// Generate a minimal 16x16 RGBA PNG with a filled circle.
-	// This avoids embedding binary files or depending on image packages at init time.
-	const size = 16
-	const centerX, centerY = 7.5, 7.5
-	const radius = 6.0
+	// Generate a 22x22 RGBA PNG with a filled circle (standard macOS menu bar icon size).
+	const size = 22
+	const centerX, centerY = 10.5, 10.5
+	const radius = 8.0
 
 	pixels := make([]byte, 0, size*(1+size*4))
 	for y := 0; y < size; y++ {

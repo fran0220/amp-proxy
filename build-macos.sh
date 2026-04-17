@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-APP_NAME="AMP Proxy"
-BUNDLE_ID="com.amp-proxy.app"
+APP_NAME="AmpProxy"
+BUNDLE_ID="dev.ampproxy.desktop"
 VERSION="${VERSION:-dev}"
 BINARY="amp-proxy"
 APP_DIR="${APP_NAME}.app"

@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/getlantern/systray"
+	"fyne.io/systray"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -16,6 +16,7 @@ func setupTray(cfg *Config, tokenMgr *TokenManager, logger *RequestLogger, authR
 func onTrayReady(cfg *Config, tokenMgr *TokenManager, logger *RequestLogger, authResolver *AuthResolver) func() {
 	return func() {
 		systray.SetIcon(iconGreen)
+		systray.SetTitle("AMP")
 		systray.SetTooltip("AMP Proxy")
 
 		mStatus := systray.AddMenuItem(fmt.Sprintf("AMP Proxy %s - Running %s", version, cfg.Listen), "")
