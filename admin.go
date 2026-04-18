@@ -63,6 +63,8 @@ func (s *AdminServer) Start(addr string) {
 	mux.HandleFunc("/api/custom-provider", s.handleCustomProvider)
 	mux.HandleFunc("/api/version", s.handleVersion)
 	mux.HandleFunc("/api/update/check", s.handleCheckUpdate)
+	mux.HandleFunc("/api/redirects", s.handleRedirects)
+	mux.HandleFunc("/api/redirects/set", s.handleSetRedirect)
 
 	// Embedded web UI
 	webContent, err := fs.Sub(webFS, "web")

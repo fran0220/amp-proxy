@@ -44,8 +44,9 @@ type Config struct {
 	Claude ClaudeConfig     `yaml:"claude"`
 	OpenAI OpenAIConfig     `yaml:"openai"`
 	Gemini GeminiConfig     `yaml:"gemini"`
-	Custom []CustomProvider `yaml:"custom,omitempty"`
-	Retry  RetryConfig      `yaml:"retry"`
+	Custom         []CustomProvider  `yaml:"custom,omitempty"`
+	ModelRedirects map[string]string `yaml:"model-redirects,omitempty"` // e.g. "claude-opus-4-6" -> "claude-opus-4-7"
+	Retry          RetryConfig       `yaml:"retry"`
 }
 
 type AmpConfig struct {
@@ -508,5 +509,36 @@ func (c *Config) RemoveAPIKey(provider, id string) {
 			return
 		}
 		c.Gemini.Entries = remove(c.Gemini.Entries)
+	}
+}
+
+// ResolveModelRedirect checks if a model has a redirect configured and returns the target model.
+// Returns the original model if no redirect is configured.
+func (c *Config) ResolveModelRedirect(model string) (target string, redirected bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.ModelRedirects == nil {
+		return model, false
+	}
+	if target, ok := c.ModelRedirects[model]; ok && target != "" {
+		return target, true
+	}
+	return model, false
+}
+
+// SetModelRedirect sets or removes a model redirect.
+func (c *Config) SetModelRedirect(from, to string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if to == "" {
+		delete(c.ModelRedirects, from)
+		if len(c.ModelRedirects) == 0 {
+			c.ModelRedirects = nil
+		}
+	} else {
+		if c.ModelRedirects == nil {
+			c.ModelRedirects = make(map[string]string)
+		}
+		c.ModelRedirects[from] = to
 	}
 }

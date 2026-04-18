@@ -9,6 +9,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 type Router struct {
@@ -106,6 +107,15 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Infof("[UPSTREAM] no model in body: %s %s", r.Method, path)
 		rt.forwardUpstream(w, r)
 		return
+	}
+
+	// Apply model redirect if configured
+	if target, redirected := rt.cfg.ResolveModelRedirect(model); redirected {
+		log.Infof("[REDIRECT] %s -> %s", model, target)
+		model = target
+		// Rewrite model in request body
+		bodyBytes, _ = sjson.SetBytes(bodyBytes, "model", model)
+		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
 
 	// Resolve auth for this model

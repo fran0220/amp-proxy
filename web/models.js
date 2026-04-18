@@ -11,6 +11,15 @@ function renderModels(el) {
       '<span><span class="badge" style="background:#1e293b;color:#60a5fa">Key</span> Manual API key</span>' +
       '<span><span class="badge" style="background:#422006;color:#fbbf24">AMP</span> Forward to ampcode.com</span>' +
     '</div>' +
+    '<div class="card" id="redirect-card" style="margin-bottom:16px">' +
+      '<div class="mod-section-header"><strong>Model Redirects</strong> <span class="dim">(rewrite model in request before routing)</span></div>' +
+      '<div id="redirect-list"></div>' +
+      '<div class="prov-add-model">' +
+        '<input type="text" id="redir-from" placeholder="From model (e.g. claude-opus-4-6)" style="flex:1" />' +
+        '<input type="text" id="redir-to" placeholder="To model (e.g. claude-opus-4-7)" style="flex:1" />' +
+        '<button class="btn-sm" onclick="addRedirect()">+ Add</button>' +
+      '</div>' +
+    '</div>' +
     '<div id="mod-sections"></div>';
   refreshModels();
 }
@@ -27,6 +36,7 @@ function refreshModels() {
       _modAuth = s;
     }).catch(function(){})
   ]).then(function() {
+    API.get('/api/redirects').then(function(r) { renderRedirectList(r); }).catch(function(){});
     API.get('/api/config').then(function(cfg) {
       var container = document.getElementById('mod-sections');
       if (!container) return;
@@ -148,4 +158,38 @@ function addModel(provider) {
 function deleteModel(provider, model) {
   if (!confirm('Remove model ' + model + '?')) return;
   API.post('/api/provider/delete-model', { provider: provider, model: model }).then(refreshModels);
+}
+
+function renderRedirectList(redirects) {
+  var el = document.getElementById('redirect-list');
+  if (!el) return;
+  var keys = Object.keys(redirects || {});
+  if (keys.length === 0) {
+    el.innerHTML = '<div class="dim" style="padding:8px 12px;font-size:12px">No redirects configured</div>';
+    return;
+  }
+  el.innerHTML = '<div class="model-list">' + keys.map(function(from) {
+    return '<div class="model-row">' +
+      '<div class="model-info"><span class="model-name">' + from + '</span>' +
+        '<span style="margin:0 8px;color:#666">→</span>' +
+        '<span class="model-name" style="color:#4ade80">' + redirects[from] + '</span></div>' +
+      '<div class="model-actions">' +
+        '<button class="btn-icon delete" onclick="removeRedirect(\'' + from + '\')" title="Remove">✕</button>' +
+      '</div></div>';
+  }).join('') + '</div>';
+}
+
+function addRedirect() {
+  var fromEl = document.getElementById('redir-from');
+  var toEl = document.getElementById('redir-to');
+  if (!fromEl || !toEl || !fromEl.value.trim() || !toEl.value.trim()) return;
+  API.post('/api/redirects/set', { from: fromEl.value.trim(), to: toEl.value.trim() }).then(function() {
+    fromEl.value = '';
+    toEl.value = '';
+    refreshModels();
+  });
+}
+
+function removeRedirect(from) {
+  API.post('/api/redirects/set', { from: from, to: '' }).then(refreshModels);
 }

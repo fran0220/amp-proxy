@@ -794,3 +794,42 @@ func (s *AdminServer) handleAuthRoute(w http.ResponseWriter, r *http.Request) {
 	log.Infof("[ADMIN] route %s/%s -> %s", req.Provider, req.Model, req.Route)
 	writeJSON(w, map[string]string{"status": "ok"})
 }
+
+func (s *AdminServer) handleRedirects(w http.ResponseWriter, r *http.Request) {
+	s.cfg.mu.RLock()
+	redirects := s.cfg.ModelRedirects
+	s.cfg.mu.RUnlock()
+	if redirects == nil {
+		redirects = make(map[string]string)
+	}
+	writeJSON(w, redirects)
+}
+
+func (s *AdminServer) handleSetRedirect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, map[string]string{"error": "invalid json"})
+		return
+	}
+	if req.From == "" {
+		writeJSON(w, map[string]string{"error": "from is required"})
+		return
+	}
+	s.cfg.SetModelRedirect(req.From, req.To)
+	if err := s.cfg.Save(); err != nil {
+		log.Errorf("failed to save config after redirect change: %v", err)
+	}
+	action := "set"
+	if req.To == "" {
+		action = "removed"
+	}
+	log.Infof("[ADMIN] model redirect %s: %s -> %s", action, req.From, req.To)
+	writeJSON(w, map[string]string{"ok": "true"})
+}

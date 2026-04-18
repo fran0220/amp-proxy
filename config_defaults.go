@@ -20,6 +20,7 @@ const (
 
 // AmpModelRoles lists all models used by Amp and their roles.
 var AmpModelRoles = []AmpModelRole{
+	{Model: "claude-opus-4-7", Provider: "anthropic", Role: "Smart", Description: "Latest state-of-the-art model", Tiers: []string{TierAmp, TierLocal, TierAPIKey}},
 	{Model: "claude-opus-4-6", Provider: "anthropic", Role: "Smart", Description: "Unconstrained state-of-the-art model", Tiers: []string{TierAmp, TierLocal, TierAPIKey}},
 	{Model: "claude-haiku-4-5-20251001", Provider: "anthropic", Role: "Rush / Titling", Description: "Fast and cheap for small tasks", Tiers: []string{TierAmp, TierLocal, TierAPIKey}},
 	{Model: "claude-sonnet-4-6", Provider: "anthropic", Role: "Librarian", Description: "Large-scale retrieval & research", Tiers: []string{TierAmp, TierLocal, TierAPIKey}},
@@ -62,6 +63,7 @@ func defaultConfig() *Config {
 		Claude: ClaudeConfig{
 			Source: "keychain",
 			Models: []ModelEntry{
+				{Name: "claude-opus-4-7", Route: "local"},
 				{Name: "claude-opus-4-6", Route: "local"},
 				{Name: "claude-sonnet-4-6", Route: "local"},
 				{Name: "claude-haiku-4-5-20251001", Route: "local"},
