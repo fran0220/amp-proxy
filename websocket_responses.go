@@ -193,7 +193,7 @@ func (h *WebSocketResponsesHandler) bridgeHTTPToWS(ctx context.Context, clientCo
 		req.Header.Set("Accept", "text/event-stream")
 		req.Header.Set("Connection", "keep-alive")
 		if isCodex {
-			req.Header.Set("Originator", "codex_cli_rs")
+			req.Header.Set("Originator", codexOriginator)
 			req.Header.Set("Version", codexClientVersion)
 			req.Header.Set("User-Agent", codexUserAgent)
 			if auth.Email != "" {

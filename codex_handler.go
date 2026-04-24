@@ -15,8 +15,9 @@ import (
 
 const (
 	codexBaseURL       = "https://chatgpt.com/backend-api/codex"
-	codexClientVersion = "0.101.0"
-	codexUserAgent     = "codex_cli_rs/0.101.0 (Mac OS 26.0.1; arm64) Apple_Terminal/464"
+	codexOriginator    = "codex_app"
+	codexClientVersion = "1.0.0"
+	codexUserAgent     = "codex_app/1.0.0 (Mac OS 26.0.1; arm64)"
 )
 
 type CodexHandler struct {
@@ -66,7 +67,7 @@ func (h *CodexHandler) Handle(w http.ResponseWriter, r *http.Request, body []byt
 		req.Header.Set("Authorization", "Bearer "+auth.Token)
 		req.Header.Set("Accept", "text/event-stream")
 		req.Header.Set("Connection", "Keep-Alive")
-		req.Header.Set("Originator", "codex_cli_rs")
+		req.Header.Set("Originator", codexOriginator)
 		req.Header.Set("Version", codexClientVersion)
 		req.Header.Set("User-Agent", codexUserAgent)
 		req.Header.Set("Session_id", sessionID)
