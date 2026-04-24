@@ -64,8 +64,8 @@ func (h *WebSocketResponsesHandler) Handle(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if auth.BaseURL != "" {
-		// Custom base URL (e.g. NewAPI) — bridge WS↔HTTP SSE
+	if auth.Source == "codex-file" || auth.BaseURL != "" {
+		// Codex backend or custom base URL — bridge WS↔HTTP SSE
 		h.handleWSToHTTP(w, r, auth, resolvedRoute, start)
 	} else {
 		// Direct OpenAI API — proxy WS↔WS
@@ -119,13 +119,17 @@ func (h *WebSocketResponsesHandler) handleWSToHTTP(w http.ResponseWriter, r *htt
 		body := []byte(responseObj)
 		// Ensure stream is enabled
 		body, _ = sjson.SetBytes(body, "stream", true)
-		if !gjson.GetBytes(body, "service_tier").Exists() {
-			body, _ = sjson.SetBytes(body, "service_tier", "fast")
-		}
 
 		m := gjson.GetBytes(body, "model").String()
 		if m != "" {
 			model = m
+		}
+
+		// Apply model redirect if configured
+		if target, redirected := h.cfg.ResolveModelRedirect(model); redirected {
+			log.Infof("[WS-HTTP-BRIDGE] redirect %s -> %s", model, target)
+			model = target
+			body, _ = sjson.SetBytes(body, "model", model)
 		}
 
 		log.Infof("[WS-HTTP-BRIDGE] response.create model=%s", model)
@@ -135,6 +139,24 @@ func (h *WebSocketResponsesHandler) handleWSToHTTP(w http.ResponseWriter, r *htt
 		if actualRoute == RouteAmp || actualAuth == nil || !actualAuth.Valid() {
 			log.Warnf("[WS-HTTP-BRIDGE] no auth for model=%s, skipping", model)
 			continue
+		}
+
+		if actualAuth.Source == "codex-file" {
+			// Codex backend: use "priority" (not "fast"), strip unsupported params
+			body, _ = sjson.SetBytes(body, "service_tier", "priority")
+			body, _ = sjson.SetBytes(body, "store", false)
+			body, _ = sjson.DeleteBytes(body, "previous_response_id")
+			body, _ = sjson.DeleteBytes(body, "prompt_cache_retention")
+			body, _ = sjson.DeleteBytes(body, "safety_identifier")
+			body, _ = sjson.DeleteBytes(body, "max_output_tokens")
+			body, _ = sjson.DeleteBytes(body, "stream_options")
+			if !gjson.GetBytes(body, "instructions").Exists() {
+				body, _ = sjson.SetBytes(body, "instructions", "")
+			}
+		} else {
+			if !gjson.GetBytes(body, "service_tier").Exists() {
+				body, _ = sjson.SetBytes(body, "service_tier", "fast")
+			}
 		}
 
 		// Send HTTP POST and stream SSE events back as WS messages
@@ -153,7 +175,13 @@ func (h *WebSocketResponsesHandler) handleWSToHTTP(w http.ResponseWriter, r *htt
 
 // bridgeHTTPToWS sends an HTTP POST to the upstream and converts SSE events to WS messages.
 func (h *WebSocketResponsesHandler) bridgeHTTPToWS(ctx context.Context, clientConn *websocket.Conn, body []byte, auth *ProviderAuth, model, routeLabel string) error {
-	upstreamURL := buildOpenAIResponsesURL(auth.BaseURL)
+	var upstreamURL string
+	isCodex := auth.Source == "codex-file"
+	if isCodex {
+		upstreamURL = codexBaseURL + "/responses"
+	} else {
+		upstreamURL = buildOpenAIResponsesURL(auth.BaseURL)
+	}
 
 	resp, err := h.retryer.Do(ctx, h.client, func() (*http.Request, error) {
 		req, reqErr := http.NewRequestWithContext(ctx, "POST", upstreamURL, bytes.NewReader(body))
@@ -164,6 +192,14 @@ func (h *WebSocketResponsesHandler) bridgeHTTPToWS(ctx context.Context, clientCo
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "text/event-stream")
 		req.Header.Set("Connection", "keep-alive")
+		if isCodex {
+			req.Header.Set("Originator", "codex_cli_rs")
+			req.Header.Set("Version", codexClientVersion)
+			req.Header.Set("User-Agent", codexUserAgent)
+			if auth.Email != "" {
+				req.Header.Set("Chatgpt-Account-Id", auth.Email)
+			}
+		}
 		return req, nil
 	})
 	if err != nil {
@@ -185,14 +221,13 @@ func (h *WebSocketResponsesHandler) bridgeHTTPToWS(ctx context.Context, clientCo
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(nil, 10*1024*1024)
 
-	var currentEvent string
 	var lastUsageMsg []byte
+	var outputItems [][]byte
 
 	for scanner.Scan() {
 		line := scanner.Text()
 
 		if strings.HasPrefix(line, "event: ") {
-			currentEvent = strings.TrimPrefix(line, "event: ")
 			continue
 		}
 
@@ -200,20 +235,43 @@ func (h *WebSocketResponsesHandler) bridgeHTTPToWS(ctx context.Context, clientCo
 			dataJSON := line[len("data: "):]
 
 			// The WS protocol sends raw event JSON (with "type" field already in data).
-			// Just forward the data as-is.
 			wsMsg := []byte(dataJSON)
+			eventType := gjson.GetBytes(wsMsg, "type").String()
+
+			// Collect completed output items
+			if eventType == "response.output_item.done" {
+				item := gjson.GetBytes(wsMsg, "item").Raw
+				if item != "" {
+					outputItems = append(outputItems, []byte(item))
+				}
+			}
+
+			// Patch response.completed if output is empty (Codex backend returns empty output[])
+			if eventType == "response.completed" && len(outputItems) > 0 {
+				outputArr := gjson.GetBytes(wsMsg, "response.output")
+				if outputArr.Exists() && outputArr.IsArray() && len(outputArr.Array()) == 0 {
+					var buf bytes.Buffer
+					buf.WriteByte('[')
+					for i, item := range outputItems {
+						if i > 0 {
+							buf.WriteByte(',')
+						}
+						buf.Write(item)
+					}
+					buf.WriteByte(']')
+					if patched, patchErr := sjson.SetRawBytes(wsMsg, "response.output", buf.Bytes()); patchErr == nil {
+						wsMsg = patched
+						log.Infof("[WS-HTTP-BRIDGE] patched response.completed with %d output items", len(outputItems))
+					}
+				}
+				lastUsageMsg = make([]byte, len(wsMsg))
+				copy(lastUsageMsg, wsMsg)
+			}
 
 			if err := clientConn.WriteMessage(websocket.TextMessage, wsMsg); err != nil {
 				return err
 			}
 
-			// Track usage from response.completed
-			if currentEvent == "response.completed" || gjson.GetBytes(wsMsg, "type").String() == "response.completed" {
-				lastUsageMsg = make([]byte, len(wsMsg))
-				copy(lastUsageMsg, wsMsg)
-			}
-
-			currentEvent = ""
 			continue
 		}
 
@@ -289,10 +347,17 @@ func (h *WebSocketResponsesHandler) handleWSToWS(w http.ResponseWriter, r *http.
 						model = m
 					}
 				})
-				// Inject fast mode for response.create messages
-				if gjson.GetBytes(msg, "type").String() == "response.create" &&
-					!gjson.GetBytes(msg, "response.service_tier").Exists() {
-					msg, _ = sjson.SetBytes(msg, "response.service_tier", "fast")
+				// Apply model redirect and inject fast mode for response.create messages
+				if gjson.GetBytes(msg, "type").String() == "response.create" {
+					if m := gjson.GetBytes(msg, "response.model").String(); m != "" {
+						if target, redirected := h.cfg.ResolveModelRedirect(m); redirected {
+							log.Infof("[WS-RESPONSES] redirect %s -> %s", m, target)
+							msg, _ = sjson.SetBytes(msg, "response.model", target)
+						}
+					}
+					if !gjson.GetBytes(msg, "response.service_tier").Exists() {
+						msg, _ = sjson.SetBytes(msg, "response.service_tier", "fast")
+					}
 				}
 			}
 			if writeErr := upstreamConn.WriteMessage(msgType, msg); writeErr != nil {

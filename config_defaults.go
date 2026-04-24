@@ -25,6 +25,7 @@ var AmpModelRoles = []AmpModelRole{
 	{Model: "claude-haiku-4-5-20251001", Provider: "anthropic", Role: "Rush / Titling", Description: "Fast and cheap for small tasks", Tiers: []string{TierAmp, TierLocal, TierAPIKey}},
 	{Model: "claude-sonnet-4-6", Provider: "anthropic", Role: "Librarian", Description: "Large-scale retrieval & research", Tiers: []string{TierAmp, TierLocal, TierAPIKey}},
 	{Model: "gpt-5.4", Provider: "openai", Role: "Deep / Oracle", Description: "Deep reasoning with extended thinking", Tiers: []string{TierAmp, TierLocal, TierAPIKey}},
+	{Model: "gpt-5.5", Provider: "openai", Role: "Deep / Oracle", Description: "Next-gen deep reasoning", Tiers: []string{TierAmp, TierLocal, TierAPIKey}},
 	{Model: "gpt-5.3-codex", Provider: "openai", Role: "Deep (legacy)", Description: "Deep reasoning (previous oracle)", Tiers: []string{TierAmp, TierLocal, TierAPIKey}},
 	{Model: "gemini-3.1-pro-preview", Provider: "google", Role: "Review", Description: "Bug identification & code review", Tiers: []string{TierAmp, TierLocal, TierAPIKey}},
 	{Model: "gemini-3-flash-preview", Provider: "google", Role: "Search / Look At / Handoff", Description: "Fast codebase retrieval & analysis", Tiers: []string{TierAmp, TierLocal, TierAPIKey}},
@@ -71,6 +72,7 @@ func defaultConfig() *Config {
 		},
 		OpenAI: OpenAIConfig{
 			Models: []ModelEntry{
+				{Name: "gpt-5.5", Route: "local"},
 				{Name: "gpt-5.4", Route: "local"},
 				{Name: "gpt-5.3-codex", Route: "local"},
 			},

@@ -233,9 +233,14 @@ func (tm *CodexTokenManager) refreshLoop() {
 		tm.mu.RLock()
 		expiresAt := tm.expiresAt
 		hasRefresh := tm.refreshToken != ""
+		hasToken := tm.accessToken != ""
 		tm.mu.RUnlock()
 
-		if !hasRefresh {
+		if !hasRefresh || !hasToken {
+			// No token loaded yet — try loading from file (user may have logged in via codex CLI)
+			if err := tm.loadFromFile(); err == nil {
+				log.Info("codex token loaded from file (was previously unavailable)")
+			}
 			continue
 		}
 		if time.Until(expiresAt) < codexRefreshMargin {

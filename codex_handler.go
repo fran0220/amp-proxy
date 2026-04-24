@@ -41,7 +41,8 @@ func (h *CodexHandler) Handle(w http.ResponseWriter, r *http.Request, body []byt
 	// Modify body for Codex endpoint — strip unsupported parameters
 	body, _ = sjson.SetBytes(body, "stream", true)
 	body, _ = sjson.SetBytes(body, "store", false)
-	body, _ = sjson.SetBytes(body, "service_tier", "fast")
+	// Codex backend maps "fast" → "priority"; it rejects "fast" with 400
+	body, _ = sjson.SetBytes(body, "service_tier", "priority")
 	body, _ = sjson.DeleteBytes(body, "previous_response_id")
 	body, _ = sjson.DeleteBytes(body, "prompt_cache_retention")
 	body, _ = sjson.DeleteBytes(body, "safety_identifier")
@@ -116,17 +117,60 @@ func (h *CodexHandler) streamResponse(w http.ResponseWriter, body io.Reader) Tok
 		return ParseOpenAIUsage(data)
 	}
 
+	var outputItems [][]byte
 	var usage TokenUsage
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(nil, 10*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()
-		if bytes.HasPrefix(line, []byte("data: ")) {
-			if u := ParseOpenAIUsage(line[len("data: "):]); u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 {
-				usage = u
+
+		if !bytes.HasPrefix(line, []byte("data: ")) {
+			_, _ = w.Write(line)
+			_, _ = w.Write([]byte("\n"))
+			flusher.Flush()
+			continue
+		}
+
+		dataJSON := line[len("data: "):]
+		eventType := gjson.GetBytes(dataJSON, "type").String()
+
+		// Collect completed output items
+		if eventType == "response.output_item.done" {
+			item := gjson.GetBytes(dataJSON, "item").Raw
+			if item != "" {
+				outputItems = append(outputItems, []byte(item))
 			}
 		}
-		_, _ = w.Write(line)
+
+		// Patch response.completed if output is empty (Codex backend returns empty output[])
+		if eventType == "response.completed" && len(outputItems) > 0 {
+			outputArr := gjson.GetBytes(dataJSON, "response.output")
+			if outputArr.Exists() && outputArr.IsArray() && len(outputArr.Array()) == 0 {
+				var buf bytes.Buffer
+				buf.WriteByte('[')
+				for i, item := range outputItems {
+					if i > 0 {
+						buf.WriteByte(',')
+					}
+					buf.Write(item)
+				}
+				buf.WriteByte(']')
+
+				patched, err := sjson.SetRawBytes(dataJSON, "response.output", buf.Bytes())
+				if err == nil {
+					dataJSON = patched
+					log.Infof("[CODEX] patched response.completed with %d output items", len(outputItems))
+				}
+			}
+		}
+
+		// Track best non-zero usage from any data line
+		if u := ParseOpenAIUsage(dataJSON); u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 {
+			usage = u
+		}
+
+		_, _ = w.Write([]byte("data: "))
+		_, _ = w.Write(dataJSON)
 		_, _ = w.Write([]byte("\n"))
 		flusher.Flush()
 	}
